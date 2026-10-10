@@ -2,16 +2,13 @@ import { useEffect, useState } from "react";
 
 import { getAllExpenses } from "./db/expenseDB";
 import { getAllIncome } from "./db/incomeDB";
-import { answerExpenseQuery } from "./utils/expenseQuery";
 
 import BackupRestore from "./components/BackupRestore";
 import VoiceInput from "./components/VoiceInput";
 import Dashboard from "./components/Dashboard";
 import ExpenseHistory from "./components/ExpenseHistory";
 import IncomeManager from "./components/IncomeManager";
-import LocalTestPanel from "./components/LocalTestPanel";
 
-import "./utils/testHindiNumbers";
 import "./index.css";
 
 const navigation = [
@@ -20,7 +17,6 @@ const navigation = [
   { id: "income", label: "Income", icon: "↗" },
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "backup", label: "Backup & Restore", icon: "⇧" },
-  { id: "developer", label: "Parser Lab", icon: "⌘" },
 ];
 
 const pageTitles = {
@@ -29,7 +25,6 @@ const pageTitles = {
   income: "Income Manager",
   dashboard: "Financial Overview",
   backup: "Backup & Restore",
-  developer: "Developer Tools",
 };
 
 function App() {
@@ -51,11 +46,6 @@ function App() {
     } catch (error) {
       console.error("Error loading financial data:", error);
     }
-  };
-
-  const testQuery = () => {
-    const answer = answerExpenseQuery("aaj kitna kharch hua", expenses);
-    console.log(answer);
   };
 
   useEffect(() => {
@@ -116,84 +106,24 @@ function App() {
       case "backup":
         return <BackupRestore onRestore={loadData} />;
 
-      case "developer":
-        return (
-          <section className="workspace-panel">
-            <div className="workspace-heading">
-              <span className="workspace-eyebrow">DEVELOPER AREA</span>
-              <h2>Parser Lab</h2>
-              <p>Test and debug your local expense parser.</p>
-            </div>
-
-            <button
-              className="secondary-button"
-              onClick={testQuery}
-            >
-              Test expense query
-            </button>
-
-            <LocalTestPanel />
-          </section>
-        );
-
       case "home":
       default:
         return (
-          <section className="voice-home">
-            <div className="voice-home-copy">
-              <span className="voice-home-eyebrow">
-                YOUR PERSONAL FINANCE ASSISTANT
-              </span>
-
-              <h2>
-                Your money.
-                <br />
-                <span>Your words.</span>
-              </h2>
-
-              <p>
-                Track spending, record income, and ask questions.
-                Just speak naturally.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className="home-mic-button"
-              aria-label="Open voice assistant"
-              onClick={() => setVoiceModalOpen(true)}
-            >
-              <span className="home-mic-halo home-mic-halo-one" />
-              <span className="home-mic-halo home-mic-halo-two" />
-
-              <span className="home-mic-core">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect x="9" y="3" width="6" height="12" rx="3" />
-                  <path d="M5 11a7 7 0 0 0 14 0" />
-                  <path d="M12 18v3" />
-                  <path d="M9 21h6" />
-                </svg>
-              </span>
-            </button>
-
-            <div className="voice-home-prompt">
-              <span className="voice-home-prompt-dot" />
-              Tap the microphone to start speaking
-            </div>
-
-            <div className="voice-home-example">
-              <span className="voice-example-label">TRY SAYING</span>
-              <p>“I spent ₹250 on food today.”</p>
-            </div>
-          </section>
+          <div className="home-overview">
+            <section className="voice-home">
+              <div className="voice-home-copy">
+                <span className="voice-home-eyebrow">YOUR PERSONAL FINANCE ASSISTANT</span>
+                <h2>Know your money.<br /><span>Own your tomorrow.</span></h2>
+                <p>Track spending, record income, and ask questions in natural Hindi or English. Tap <strong>Ask AI</strong> in the top-right corner to speak.</p>
+              </div>
+              <div className="home-quick-prompts" aria-label="Example voice commands">
+                <span>“आज मैंने 250 रुपये खाने पर खर्च किए”</span>
+                <span>“इस महीने कितना खर्च हुआ?”</span>
+                <span>“मुझे 12000 रुपये सैलरी मिली”</span>
+              </div>
+            </section>
+            <Dashboard expenses={expenses} incomes={incomes} />
+          </div>
         );
     }
   };
@@ -295,8 +225,10 @@ function App() {
             type="button"
             className="topbar-mic-shortcut"
             onClick={() => setVoiceModalOpen(true)}
+            aria-label="Open Hindi voice assistant"
+            title="Ask your AI assistant"
           >
-            <span>🎙</span>
+            <span aria-hidden="true">🎙</span>
             <span className="topbar-mic-label">Ask AI</span>
           </button>
         </header>
@@ -331,8 +263,8 @@ function App() {
           >
             <div className="voice-modal-header">
               <div>
-                <span className="voice-modal-eyebrow">VOICE ASSISTANT</span>
-                <h2 id="voice-modal-title">I'm listening</h2>
+                <span className="voice-modal-eyebrow">GEMINI-POWERED VOICE</span>
+                <h2 id="voice-modal-title">आपका AI सहायक</h2>
               </div>
 
               <button

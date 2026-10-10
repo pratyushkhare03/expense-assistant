@@ -593,8 +593,8 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
 
     const data = result.data;
 
-    // Only accept known response types.
-    if (!["expense", "query", "unknown"].includes(data.type)) {
+    // Accept the full set of commands understood by the voice assistant.
+    if (!["expense", "income", "query", "person_transaction", "person_query", "unknown"].includes(data.type)) {
       throw new Error("Invalid response type");
     }
 
@@ -607,6 +607,13 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
       "total_expense",
       "category_expense",
       "date_expense",
+      "total_income",
+      "month_income",
+      "total_balance",
+      "month_balance",
+      "record_income",
+      "record_person_transaction",
+      "person_ledger",
       "unknown",
     ];
 
@@ -616,7 +623,7 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
 
     // Never save a transaction without a valid positive amount.
     if (
-      data.type === "expense" &&
+      ["expense", "income", "person_transaction"].includes(data.type) &&
       (!Number.isFinite(data.amount) || data.amount <= 0)
     ) {
       return {
@@ -645,7 +652,7 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
     ];
 
     if (
-      data.type === "expense" &&
+      ["expense", "person_transaction"].includes(data.type) &&
       !validCategories.includes(data.category)
     ) {
       data.category = "other";
@@ -655,7 +662,7 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
       success: true,
       data: {
         ...data,
-        amount: data.type === "query" ? null : data.amount,
+        amount: ["query", "person_query"].includes(data.type) ? null : data.amount,
         description: data.description ?? text,
         date: data.date ?? null,
       },
@@ -679,15 +686,14 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
 };
 
 export const parseWithBackend = async (text) => {
+  // Send every spoken command to Gemini first so natural Hindi/Hinglish is
+  // interpreted consistently. The local parser is a resilience fallback.
+  const aiResult = await parseWithGemini(text);
+  if (aiResult.success && aiResult.data?.type !== "unknown") return aiResult;
+
   const localResult = await parseLocally(text);
-
-  // Existing local behavior takes priority.
-  if (localResult.data.type !== "unknown") {
-    return localResult;
-  }
-
-  // Use Gemini only when the local parser cannot understand the command.
-  return await parseWithGemini(text);
+  if (localResult.success && localResult.data?.type !== "unknown") return localResult;
+  return aiResult;
 };
 
 

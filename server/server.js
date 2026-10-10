@@ -1,317 +1,93 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-
 const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+  : null;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
 
-app.get("/", (req, res) => {
-  res.json({
-    message: "Expense Assistant AI Server is running",
-  });
+app.get("/", (_req, res) => {
+  res.json({ message: "Expense Assistant AI Server is running" });
 });
+
+const responseSchema = {
+  type: "OBJECT",
+  properties: {
+    type: { type: "STRING", enum: ["expense", "income", "query", "person_transaction", "person_query", "unknown"] },
+    amount: { type: "NUMBER", nullable: true },
+    category: { type: "STRING", enum: ["food", "travel", "fuel", "grocery", "shopping", "bills", "health", "other"], nullable: true },
+    source: { type: "STRING", enum: ["salary", "family", "freelance", "business", "investment", "other"], nullable: true },
+    description: { type: "STRING", nullable: true },
+    intent: { type: "STRING", enum: ["record_expense", "record_income", "today_expense", "yesterday_expense", "day_before_yesterday_expense", "month_expense", "total_expense", "category_expense", "date_expense", "total_income", "month_income", "total_balance", "month_balance", "record_person_transaction", "person_ledger", "unknown"], nullable: true },
+    date: { type: "STRING", nullable: true },
+    personName: { type: "STRING", nullable: true },
+    transactionType: { type: "STRING", enum: ["given", "received", "loan_given", "loan_repayment", "expense"], nullable: true },
+    metric: { type: "STRING", enum: ["given", "received", "expense", "loan_outstanding"], nullable: true },
+  },
+  required: ["type", "amount", "category", "source", "description", "intent", "date", "personName", "transactionType", "metric"],
+};
 
 app.post("/api/parse", async (req, res) => {
   try {
-    const { text } = req.body;
-
-    if (!text || typeof text !== "string") {
-      return res.status(400).json({
-        success: false,
-        message: "Valid text is required",
-      });
+    const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+    if (!text || text.length > 2000) {
+      return res.status(400).json({ success: false, message: "Please provide a command under 2000 characters." });
+    }
+    if (!ai) {
+      return res.status(503).json({ success: false, message: "AI service is not configured." });
     }
 
-    const prompt = `
-You are a strict expense parser.
+    const prompt = `You are the Hindi-first financial command parser for a personal expense tracker. Interpret ONLY this exact user utterance. It may be Hindi, Hinglish, or English. Understand natural wording and transliteration, but never invent missing amounts, names, dates, or facts. Return only JSON matching the schema.
 
-Your ONLY job is to extract information from the user's EXACT input text.
+USER UTTERANCE: ${JSON.stringify(text)}
 
-You MUST NOT invent, assume, guess, or add information that is not present in the input.
-
-USER INPUT:
-"${text}"
-
-RULES:
-
-1. If the input describes spending money:
-   type = "expense"
-   intent = "record_expense"
-
-2. Extract the EXACT numeric amount from the input.
-   Example:
-   "300 rupaye petrol mein lage"
-   amount MUST be 300.
-
-3. NEVER change the amount.
-   NEVER use an amount from another example.
-   NEVER invent an amount.
-
-4. Extract the item/service from the user's input.
-   Example:
-   "300 rupaye petrol mein lage"
-   description MUST be "petrol".
-
-5. Determine category ONLY from the actual words in the input.
-
-Categories:
-- food: tea, chai, coffee, samosa, lunch, dinner, breakfast, food, restaurant, etc.
-- travel: auto, taxi, uber, ola, bus, train, travel, etc.
-- fuel: petrol, diesel, fuel, CNG, etc.
-- grocery: grocery, vegetables, milk, fruits, etc.
-- shopping: clothes, shoes, shopping, etc.
-- bills: electricity, recharge, internet bill, mobile bill, etc.
-- health: medicine, doctor, hospital, medical, etc.
-- other: if no category can be determined.
-
-6. If the input contains "petrol", category MUST be "fuel".
-7. If the input contains "auto", category MUST be "travel".
-8. If the input contains "chai", "tea", or "samosa", category MUST be "food".
-
-9. If an amount is NOT present:
-   amount = null.
-   NEVER invent an amount.
-
-10. If the input is not an expense or understandable query:
-   type = "unknown"
-   intent = "unknown"
-
-11. For expense input:
-   category MUST NOT be null.
-   Use "other" if necessary.
-
-12. Return ONLY the JSON requested by the response schema.
-
-QUERY RULES:
-
-If the user is asking about their expenses, type MUST be "query".
-
-Use these intents:
-
-- today_expense
-  Examples:
-  "Aaj kitna kharch hua?"
-  "How much did I spend today?"
-  "Aaj ka expense kitna hai?"
-
-- month_expense
-  Examples:
-  "Is mahine kitna kharch hua?"
-  "How much did I spend this month?"
-
-- total_expense
-  Examples:
-  "Ab tak total kitna kharch hua?"
-  "What is my total expense?"
-
-- category_expense
-  Examples:
-  "Food par kitna kharch hua?"
-  "Petrol par kitna gaya?"
-  "How much did I spend on travel?"
-
-For category_expense:
-category MUST contain the relevant category.
-
-Examples:
-
-"Food par kitna kharch hua?"
-→ type: query
-→ category: food
-→ intent: category_expense
-
-"Petrol par kitna gaya?"
-→ type: query
-→ category: fuel
-→ intent: category_expense
-
-"Auto par kitna kharch hua?"
-→ type: query
-→ category: travel
-→ intent: category_expense
-
-"Shopping par kitna kharch hua?"
-→ type: query
-→ category: shopping
-→ intent: category_expense
-
-Date query intents:
-
-- yesterday_expense
-- day_before_yesterday_expense
-
-Examples:
-
-"Kal kitna kharch hua?"
-→ type: query
-→ intent: yesterday_expense
-
-"Parso kitna kharch hua?"
-→ type: query
-→ intent: day_before_yesterday_expense
-
-For a specific date query:
-
-"1 October ko kitna kharch hua?"
-→ type: query
-→ intent: date_expense
-→ date: "2026-10-01"
-
-Users may use ordinal date formats such as:
-"1st October"
-"2nd October"
-"3rd October"
-"4th October"
-"5th October"
-
-Treat ordinal suffixes (st, nd, rd, th) as part of the date and return the correct date in YYYY-MM-DD format.
-
-Examples:
-"1st October ko kitna kharch hua?"
-→ type: query
-→ intent: date_expense
-→ date: "2026-10-01"
-
-"2nd October ko kitna kharch hua?"
-→ type: query
-→ intent: date_expense
-→ date: "2026-10-02"
-
-"3rd October ko kitna kharch hua?"
-→ type: query
-→ intent: date_expense
-→ date: "2026-10-03"
-
-"5th October ko kitna kharch hua?"
-→ type: query
-→ intent: date_expense
-→ date: "2026-10-05"
-
-"5 October ko kitna kharch hua?"
-→ type: query
-→ intent: date_expense
-→ date: "2026-10-05"
-
-Return the date in YYYY-MM-DD format.
-
-Use the current year when the user mentions a date without a year.
-Do not invent a date.
-
-For queries:
-amount MUST be null.
-description can contain the original question.
-
-Do not use information from previous requests.
-Do not use information from examples to answer the current request.
-Process ONLY this exact input.
-`;
+INTENT RULES:
+- Expense: user spent/paid money for goods/services (e.g. "आज 250 रुपये खाने पर खर्च किए", "I spent 100 on tea"). type=expense, intent=record_expense, positive numeric amount required, category from supported categories. petrol/diesel/CNG=fuel; auto/bus/train/taxi=travel; chai/tea/food=food.
+- Income: money the user received/earned (e.g. "मुझे 12000 रुपये सैलरी मिली", "I received 500 from freelance work"). type=income, intent=record_income, source salary/family/freelance/business/investment/other.
+- Queries: use type=query and amount=null. Supported intents: today_expense, yesterday_expense, day_before_yesterday_expense, month_expense, total_expense, category_expense, date_expense, total_income, month_income, total_balance, month_balance. For category_expense fill category. For a specific date, use YYYY-MM-DD and current year if year is omitted; if date is ambiguous, use unknown rather than guessing.
+- Person transaction: examples "100 rupay Shubh ko diya" -> type=person_transaction, transactionType=given; "Shubh ne 100 rupaye diye" -> received; "Rahul ko 500 rupaye udhaar diye" -> loan_given; "Amit ne 200 rupaye udhaar wapas kiye" -> loan_repayment; "50 rupay Pragati ne kharch kiye" -> expense. Set personName and positive amount. Loan given is NOT ordinary expense; loan repayment is NOT ordinary income.
+- Person queries: "Shubh ko kitne paise diye?" -> type=person_query, metric=given. For outstanding loans use metric=loan_outstanding; received from person use received; person-related spending use expense. Set personName and amount=null.
+- Do not classify a question about spending as a new expense. Do not confuse "mujhe paise mile" (income) with an expense. If required information for recording a transaction is absent or the utterance is not understood, use type=unknown.
+- Always preserve the actual amount as spoken. Hindi number words must be interpreted carefully. No amount -> null.
+- Descriptions should be concise and based only on the user's words. Keep category and source in their exact allowed enum.
+- Use natural interpretation, but do not return an answer to a financial query; return the structured intent for the app to calculate from the user's saved records.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
-
-      config: {
-        responseMimeType: "application/json",
-
-        responseSchema: {
-  type: "OBJECT",
-  properties: {
-    type: {
-      type: "STRING",
-      enum: ["expense", "query", "unknown"],
-    },
-
-    amount: {
-      type: "NUMBER",
-      nullable: true,
-    },
-
-
-    category: {
-      type: "STRING",
-      enum: [
-        "food",
-        "travel",
-        "fuel",
-        "grocery",
-        "shopping",
-        "bills",
-        "health",
-        "other",
-      ],
-      nullable: true,
-    },
-
-    description: {
-      type: "STRING",
-      nullable: true,
-    },
-
-    intent: {
-      type: "STRING",
-      enum: [
-        "record_expense",
-        "today_expense",
-        "month_expense",
-        "total_expense",
-        "category_expense",
-        "unknown",
-        "yesterday_expense",
-        "day_before_yesterday_expense",
-        "date_expense",
-      ],
-      nullable: true,
-    },
-
-    
-    date: {
-  type: "STRING",
-  nullable: true,
-},
-  },
-
-  required: [
-    "type",
-    "amount",
-    "category",
-    "description",
-    "intent",
-    "date",
-  ],
-},
-      },
+      config: { responseMimeType: "application/json", responseSchema },
     });
 
-    const result = JSON.parse(response.text);
-
-    console.log("Input:", text);
-    console.log("Gemini result:", result);
-
-    res.json({
-      success: true,
-      data: result,
-    });
-
+    const data = JSON.parse(response.text);
+    const validTypes = ["expense", "income", "query", "person_transaction", "person_query", "unknown"];
+    if (!validTypes.includes(data.type)) data.type = "unknown";
+    if (["expense", "income", "person_transaction"].includes(data.type) && (!Number.isFinite(data.amount) || data.amount <= 0)) {
+      data.type = "unknown";
+      data.amount = null;
+      data.intent = "unknown";
+    }
+    if (["person_transaction", "person_query"].includes(data.type) && !String(data.personName || "").trim()) {
+      data.type = "unknown";
+      data.intent = "unknown";
+    }
+    if (data.type === "person_transaction" && !["given", "received", "loan_given", "loan_repayment", "expense"].includes(data.transactionType)) {
+      data.type = "unknown";
+      data.intent = "unknown";
+      data.amount = null;
+    }
+    if (data.type === "income" && !["salary", "family", "freelance", "business", "investment", "other"].includes(data.source)) data.source = "other";
+    if (data.type === "expense" && !["food", "travel", "fuel", "grocery", "shopping", "bills", "health", "other"].includes(data.category)) data.category = "other";
+    res.json({ success: true, data });
   } catch (error) {
-    console.error("Gemini error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to process the request",
-    });
+    console.error("Gemini parsing error:", error.message);
+    res.status(500).json({ success: false, message: "The voice command could not be understood right now." });
   }
 });
 
-const PORT = 5000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

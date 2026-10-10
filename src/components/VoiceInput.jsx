@@ -34,6 +34,7 @@ import {
 function VoiceInput({ expenses, onExpenseAdded }) {
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState("");
 
   const loadIncomes = async () => {
@@ -67,16 +68,16 @@ const handlePersonCommand = async (data, spokenText) => {
     }
 
     const confirmations = {
-      given: `₹${data.amount} ${data.personName} ko diye gaye. Ledger update ho gaya.`,
-      received: `₹${data.amount} ${data.personName} se mile hue record ho gaye.`,
-      loan_given: `${data.personName} ko ₹${data.amount} udhaar diye gaye. Yeh normal expense mein nahi joda gaya.`,
-      loan_repayment: `${data.personName} se ₹${data.amount} udhaar wapas mile. Loan ledger update ho gaya.`,
-      expense: `${data.personName} se related ₹${data.amount} ka expense save ho gaya.`,
+      given: `₹${data.amount} ${data.personName} को दे दिए गए हैं। हिसाब अपडेट कर दिया गया है।`,
+      received: `₹${data.amount} ${data.personName} से मिलने का रिकॉर्ड सेव हो गया है।`,
+      loan_given: `${data.personName} को ₹${data.amount} उधार दिए गए हैं। इसे सामान्य खर्च में नहीं जोड़ा गया है।`,
+      loan_repayment: `${data.personName} से ₹${data.amount} उधार वापस मिलने का रिकॉर्ड अपडेट हो गया है।`,
+      expense: `${data.personName} से संबंधित ₹${data.amount} का खर्च सेव हो गया है।`,
     };
 
     const answer =
       confirmations[transactionType] ||
-      "Person transaction save ho gaya.";
+      "व्यक्ति से जुड़ा लेन-देन सेव हो गया है।";
 
     setMessage(answer);
     speak(answer);
@@ -95,7 +96,7 @@ const handlePersonCommand = async (data, spokenText) => {
     );
 
     if (!person) {
-      const answer = `${data.personName} ka ledger abhi nahi mila. Pehle unka transaction record karo.`;
+      const answer = `${data.personName} का हिसाब नहीं मिला। पहले उनका कोई लेन-देन रिकॉर्ड करें।`;
       setMessage(answer);
       speak(answer);
       return true;
@@ -106,25 +107,25 @@ const handlePersonCommand = async (data, spokenText) => {
 
     switch (data.metric) {
       case "loan_outstanding":
-        answer = `${person.name} ka baaki udhaar ₹${summary.loanOutstanding} hai.`;
+        answer = `${person.name} का बाकी उधार ₹${summary.loanOutstanding} है।`;
         break;
 
       case "received":
         answer =
-          `${person.name} se total ₹${
+          `${person.name} से कुल ₹${
             summary.totalReceived + summary.totalLoanRepayments
-          } receive hue hain.`;
+          } प्राप्त हुए हैं।`;
         break;
 
       case "expense":
-        answer = `${person.name} se related total expense ₹${summary.totalExpenses} hai.`;
+        answer = `${person.name} से संबंधित कुल खर्च ₹${summary.totalExpenses} है।`;
         break;
 
       default:
         answer =
-          `Tumne ${person.name} ko total ₹${
+          `आपने ${person.name} को कुल ₹${
             summary.totalGiven + summary.totalLoansGiven
-          } diye hain, jisme ₹${summary.totalLoansGiven} udhaar ke roop mein diye gaye.`;
+          } दिए हैं, जिनमें से ₹${summary.totalLoansGiven} उधार के रूप में दिए गए हैं।`;
     }
 
     setMessage(answer);
@@ -136,11 +137,23 @@ const handlePersonCommand = async (data, spokenText) => {
 };
 
   const speak = (text) => {
-    const speech = new SpeechSynthesisUtterance(text);
+    if (!("speechSynthesis" in window)) return;
 
-    speech.lang = "hi-IN";
-    speech.rate = 1;
-    speech.pitch = 1;
+    const speech = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const hindiVoices = voices.filter((voice) =>
+      /^hi(-|_)?in$/i.test(voice.lang) || /^hi\b/i.test(voice.lang)
+    );
+    // Prefer a Hindi/India voice; available voices depend on the user's device.
+    const preferredVoice =
+      hindiVoices.find((voice) => /google.*hindi|hindi.*google/i.test(voice.name)) ||
+      hindiVoices.find((voice) => /india|hindi/i.test(voice.name)) ||
+      hindiVoices[0];
+
+    if (preferredVoice) speech.voice = preferredVoice;
+    speech.lang = preferredVoice?.lang || "hi-IN";
+    speech.rate = 0.94;
+    speech.pitch = 1.02;
 
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(speech);
@@ -151,18 +164,21 @@ const handlePersonCommand = async (data, spokenText) => {
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser.");
+      alert("इस ब्राउज़र में आवाज़ पहचानने की सुविधा उपलब्ध नहीं है। कृपया Chrome या किसी समर्थित ब्राउज़र का उपयोग करें।");
       return;
     }
 
     const recognition = new SpeechRecognition();
 
+    window.speechSynthesis?.cancel?.();
+    setProcessing(false);
     recognition.lang = "hi-IN";
     recognition.continuous = false;
     recognition.interimResults = false;
 
     recognition.onstart = () => {
       setListening(true);
+      setProcessing(false);
       setMessage("");
     };
 
@@ -170,18 +186,14 @@ const handlePersonCommand = async (data, spokenText) => {
       const spokenText = event.results[0][0].transcript;
 
       setText(spokenText);
+      setProcessing(true);
 
       try {
         const response = await parseWithBackend(spokenText);
 
-        console.log("Voice transcript:", spokenText);
-console.log("Parser result:", response);
-console.log("Detected intent:", response.data?.intent);
-        console.log("Local parser response:", response);
-
         if (!response.success) {
-          setMessage("AI response nahi mila.");
-          speak("AI response nahi mila.");
+          setMessage("AI से जवाब नहीं मिल पाया। कृपया दोबारा कोशिश करें।");
+          speak("ए आई से जवाब नहीं मिल पाया। कृपया दोबारा कोशिश करें।");
           return;
         }
 
@@ -209,21 +221,21 @@ if (handledPersonCommand) {
             case "today_expense": {
               const amount = getTodayExpense(expenses);
 
-              answer = `Aaj tumne ₹${amount} kharch kiye.`;
+              answer = `आज आपका कुल खर्च ₹${amount} है।`;
               break;
             }
 
             case "month_expense": {
               const amount = getThisMonthExpense(expenses);
 
-              answer = `Is mahine tumne ₹${amount} kharch kiye.`;
+              answer = `इस महीने आपका कुल खर्च ₹${amount} है।`;
               break;
             }
 
             case "total_expense": {
               const amount = getTotalExpense(expenses);
 
-              answer = `Ab tak tumne ₹${amount} kharch kiye hain.`;
+              answer = `अब तक आपका कुल खर्च ₹${amount} है।`;
               break;
             }
 
@@ -233,7 +245,12 @@ if (handledPersonCommand) {
               const category = data.category || "other";
               const amount = categoryTotals[category] || 0;
 
-              answer = `${category} par tumne ₹${amount} kharch kiye hain.`;
+              const categoryNames = {
+                food: "खाने-पीने", travel: "यात्रा", fuel: "ईंधन",
+                grocery: "किराने", shopping: "शॉपिंग", bills: "बिल",
+                health: "स्वास्थ्य", other: "अन्य",
+              };
+              answer = `${categoryNames[category] || "इस श्रेणी"} पर आपका कुल खर्च ₹${amount} है।`;
               break;
             }
 
@@ -241,7 +258,7 @@ if (handledPersonCommand) {
               const date = getDateOffset(-1);
               const amount = getExpenseByDate(expenses, date);
 
-              answer = `Kal tumne ₹${amount} kharch kiye.`;
+              answer = `कल आपका कुल खर्च ₹${amount} था।`;
               break;
             }
 
@@ -249,7 +266,7 @@ if (handledPersonCommand) {
               const date = getDateOffset(-2);
               const amount = getExpenseByDate(expenses, date);
 
-              answer = `Parso tumne ₹${amount} kharch kiye.`;
+              answer = `परसों आपका कुल खर्च ₹${amount} था।`;
               break;
             }
 
@@ -265,7 +282,7 @@ case "total_income": {
   const incomes = await loadIncomes();
   const amount = getTotalIncome(incomes);
 
-  answer = `Ab tak tumhari total income ₹${amount} hai.`;
+  answer = `अब तक आपकी कुल आय ₹${amount} है।`;
   break;
 }
 
@@ -273,7 +290,7 @@ case "month_income": {
   const incomes = await loadIncomes();
   const amount = getThisMonthIncome(incomes);
 
-  answer = `Is mahine tumhari income ₹${amount} hai.`;
+  answer = `इस महीने आपकी कुल आय ₹${amount} है।`;
   break;
 }
 
@@ -283,7 +300,7 @@ case "total_balance": {
   const totalExpense = getTotalExpense(expenses);
   const balance = totalIncome - totalExpense;
 
-  answer = `Tumhara overall balance ₹${balance} hai.`;
+  answer = `आपकी दर्ज आय और खर्च के अनुसार कुल बैलेंस ₹${balance} है।`;
   break;
 }
 
@@ -293,12 +310,12 @@ case "month_balance": {
   const monthExpense = getThisMonthExpense(expenses);
   const balance = monthIncome - monthExpense;
 
-  answer = `Is mahine ka balance ₹${balance} hai.`;
+  answer = `इस महीने दर्ज आय और खर्च के अनुसार बैलेंस ₹${balance} है।`;
   break;
 }
 
             default: {
-              answer = "Sorry, main tumhara question samajh nahi paaya.";
+              answer = "माफ़ कीजिए, मैं आपका सवाल समझ नहीं पाया। कृपया दूसरे तरीके से पूछें।";
             }
           }
 
@@ -319,7 +336,7 @@ case "month_balance": {
             !Number.isFinite(data.amount) ||
             data.amount <= 0
           ) {
-            const question = "Kitne rupaye mile?";
+            const question = "कितने रुपये मिले थे?";
             setMessage(question);
             speak(question);
             return;
@@ -348,9 +365,12 @@ case "month_balance": {
 
           await addIncome(income);
 
+          const sourceNames = {
+            salary: "वेतन", family: "परिवार", freelance: "फ्रीलांस काम",
+            business: "व्यवसाय", investment: "निवेश", other: "अन्य",
+          };
           const confirmation =
-            `₹${data.amount} ki income save ho gayi. ` +
-            `Source: ${source}.`;
+            `₹${data.amount} की आय सेव हो गई है। स्रोत: ${sourceNames[source] || "अन्य"}।`;
 
           setMessage(confirmation);
           speak(confirmation);
@@ -373,7 +393,7 @@ case "month_balance": {
             !Number.isFinite(data.amount) ||
             data.amount <= 0
           ) {
-            const question = "Kitne rupaye kharch hue?";
+            const question = "कितने रुपये खर्च हुए थे?";
 
             setMessage(question);
             speak(question);
@@ -426,7 +446,7 @@ case "month_balance": {
         // =========================
 
         const unknownMessage =
-          "Sorry, main aapki baat samajh nahi paaya.";
+          "माफ़ कीजिए, मैं आपकी बात समझ नहीं पाया। कृपया फिर से बोलें।";
 
         setMessage(unknownMessage);
         speak(unknownMessage);
@@ -434,10 +454,12 @@ case "month_balance": {
         console.error("AI parsing error:", error);
 
         const errorMessage =
-          "Data process nahi ho paya. Please dobara try karo.";
+          "आपकी जानकारी सेव नहीं हो पाई। कृपया दोबारा कोशिश करें।";
 
         setMessage(errorMessage);
         speak(errorMessage);
+      } finally {
+        setProcessing(false);
       }
     };
 
@@ -445,7 +467,8 @@ case "month_balance": {
       console.error("Speech recognition error:", event.error);
 
       setListening(false);
-      setMessage("Aapki awaaz samajh nahi aayi.");
+      setProcessing(false);
+      setMessage("माफ़ कीजिए, आपकी बात साफ़ सुनाई नहीं दी। कृपया फिर से बोलें।");
     };
 
     recognition.onend = () => {
@@ -460,20 +483,20 @@ case "month_balance": {
     <div className="voice-assistant">
       <div className="voice-heading">
         <div>
-          <span className="voice-eyebrow">YOUR AI COMPANION</span>
-          <h2>Voice Assistant</h2>
+          <span className="voice-eyebrow">आपका निजी वित्तीय सहायक</span>
+          <h2>बोलिए, मैं सुन रहा हूँ</h2>
           <p className="voice-subtitle">
-            Speak naturally. I'll take care of your finances.
+            हिंदी में खर्च दर्ज करें, आय जोड़ें या अपने पैसों से जुड़े सवाल पूछें।
           </p>
         </div>
 
         <span className={`voice-status ${listening ? "is-listening" : ""}`}>
           <span className="voice-status-dot" />
-          {listening ? "Listening" : "Ready"}
+          {listening ? "सुन रहा हूँ" : processing ? "समझ रहा हूँ" : "तैयार हूँ"}
         </span>
       </div>
 
-      <div className={`voice-orb-area ${listening ? "is-listening" : ""}`}>
+      <div className={`voice-orb-area ${listening ? "is-listening" : ""} ${processing ? "is-processing" : ""}`}>
         <div className="voice-orb-rings" aria-hidden="true">
           <span className="voice-ring ring-one" />
           <span className="voice-ring ring-two" />
@@ -482,14 +505,14 @@ case "month_balance": {
 
         <button
           type="button"
-          className={`voice-mic-button ${listening ? "is-listening" : ""}`}
+          className={`voice-mic-button ${listening ? "is-listening" : ""} ${processing ? "is-processing" : ""}`}
           onClick={startListening}
-          disabled={listening}
-          aria-label={listening ? "Listening to your voice" : "Start voice assistant"}
+          disabled={listening || processing}
+          aria-label={listening ? "Listening to your voice" : processing ? "Understanding your command" : "Start voice assistant"}
         >
           <span className="voice-orb-glow" />
           <span className="voice-mic-icon" aria-hidden="true">
-            {listening ? "〰" : "🎙"}
+            {listening ? "〰" : processing ? "✦" : "🎙"}
           </span>
           <span className="voice-orb-shine" />
         </button>
@@ -506,13 +529,15 @@ case "month_balance": {
 
       <p className="voice-instruction">
         {listening
-          ? "I'm listening… speak now"
-          : "Tap the microphone to start speaking"}
+          ? "बोलिए, मैं सुन रहा हूँ…"
+          : processing
+            ? "आपकी बात समझी जा रही है…"
+            : "माइक दबाएँ और हिंदी में बोलें"}
       </p>
 
       <div className="voice-transcript">
-        <span className="transcript-label">YOU SAID</span>
-        <p>{text || "Try: मैंने चाय पर पचास रुपये खर्च किए"}</p>
+        <span className="transcript-label">आपने कहा</span>
+        <p>{text || "उदाहरण: मैंने चाय पर पचास रुपये खर्च किए"}</p>
       </div>
 
       {message && (
@@ -522,14 +547,7 @@ case "month_balance": {
         </div>
       )}
 
-      <button
-        type="button"
-        className="voice-test-button"
-        onClick={() => setText("मैंने चाय पर पचास रुपये खर्च किए")}
-      >
-        <span aria-hidden="true">🧪</span>
-        Test Hindi Expense
-      </button>
+
     </div>
   );
 }
