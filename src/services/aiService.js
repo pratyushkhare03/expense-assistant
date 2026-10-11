@@ -164,6 +164,7 @@ const parsePersonCommand = (text) => {
       type: "person_query",
       personName,
       metric,
+      date: parseDateQuery(text),
       intent: "person_ledger",
     };
   }
@@ -671,6 +672,14 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
 };
 
 export const parseWithBackend = async (text) => {
+  // Date-based expense questions are deterministic: parse locally before Gemini.
+  // This prevents phrases such as "1 October ko kitna kharch hua?" from being
+  // mistaken for a person named "1 October" or a generic unknown command.
+  if (isQuery(text) && parseDateQuery(text)) {
+    const dateQuery = await parseLocally(text);
+    if (dateQuery.success && dateQuery.data?.type === "query") return dateQuery;
+  }
+
   // Person-ledger commands are parsed locally first. This prevents Gemini from
   // misclassifying a named-person transaction as an ordinary "other" expense.
   const personCommand = parsePersonCommand(text);

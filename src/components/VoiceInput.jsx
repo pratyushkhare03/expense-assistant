@@ -16,6 +16,7 @@ import {
   addPersonTransaction,
   getAllPeople,
   getPersonSummary,
+  getPersonTransactions,
 } from "../db/personLedgerDB";
 
 import {
@@ -105,6 +106,22 @@ const handlePersonCommand = async (data, spokenText) => {
 
     const summary = await getPersonSummary(person.id);
     let answer;
+
+    if (data.metric === "expense" && data.date) {
+      const transactions = await getPersonTransactions(person.id);
+      const datedExpenses = transactions.filter(
+        (transaction) =>
+          transaction.type === "expense" && transaction.date === data.date
+      );
+      const amount = datedExpenses.reduce(
+        (total, transaction) => total + (Number(transaction.amount) || 0),
+        0
+      );
+      answer = `${person.name} का ${data.date} को कुल खर्च ₹${amount} है।`;
+      setMessage(answer);
+      speak(answer);
+      return true;
+    }
 
     switch (data.metric) {
       case "loan_outstanding":

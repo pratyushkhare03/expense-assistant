@@ -145,6 +145,9 @@ export const getPersonSummary = async (personId) => {
     switch (transaction.type) {
       case "given":
         summary.totalGiven += amount;
+        // Older versions stored "Shivam ko paise diye" as `given`.
+        // Count those historical transfers as person-associated expenses too.
+        summary.totalExpenses += amount;
         break;
 
       case "received":
