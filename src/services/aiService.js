@@ -91,14 +91,16 @@ const cleanPersonName = (name = "") =>
 
 const extractPersonName = (text) => {
   const patterns = [
-    // "100 rupay Shubh ko diya"
+    // "100 rupay xyz ko diya"
     /(?:रुपये?|रुपए|रुपया|rupees?|rupay|rs\.?)\s+(.+?)\s+को(?=\s|$)/i,
 
-    // "50 rupay Pragati ne kharch kiye"
+    // "50 rupay xyz ne kharch kiye"
     /(?:रुपये?|रुपए|रुपया|rupees?|rupay|rs\.?)\s+(.+?)\s+ने(?=\s|$)/i,
 
     // "Rahul ko 500 rupaye udhaar diye"
     /^(.+?)\s+को(?=\s|$)/i,
+
+    /^(.+?)\s+(?:पर|पे|par|pe)(?=\s|$)/i,
 
     // "Amit ne 200 rupaye udhaar wapas kiye"
     /^(.+?)\s+ने(?=\s|$)/i,
@@ -171,9 +173,11 @@ const parsePersonCommand = (text) => {
       )
     ) {
       metric = "received";
-    } else if (/खर्च|खर्चे|spent|expense/i.test(lower)) {
-      metric = "expense";
-    }
+    } else if (
+  /खर्च|खर्चे|खर्चा|खर्च हुए|खर्च हुआ|spent|expense/i.test(lower)
+) {
+  metric = "expense";
+}
 
     return {
       type: "person_query",
@@ -232,20 +236,22 @@ const parsePersonCommand = (text) => {
   }
 
   // Money given: "100 rupay Shubh ko diya"
-  if (
-    /(?:^|\s)को(?=\s|$|[?!,.])/u.test(text) &&
-    /(दिया|दिए|दी|दे दिए|diya|diye|de diye|gave|paid|transfer)/i.test(
-      lower
-    )
-  ) {
-    return {
-      type: "person_transaction",
-      personName,
-      amount,
-      transactionType: "given",
-      intent: "record_person_transaction",
-    };
-  }
+  // "10 rupaye Shivam ko diye" = person-associated expense
+if (
+  /(?:^|\s)(?:को|ko)(?=\s|$|[?!,.])/iu.test(text) &&
+  /(दिया|दिए|दी|दे दिए|diya|diye|de diye|gave|paid|transfer)/i.test(
+    lower
+  )
+) {
+  return {
+    type: "person_transaction",
+    personName,
+    amount,
+    transactionType: "expense",
+    category: detectCategory(text),
+    intent: "record_person_transaction",
+  };
+}
 
   // Money received: "Shubh ne 100 rupaye diye"
   if (
