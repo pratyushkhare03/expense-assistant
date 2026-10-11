@@ -233,7 +233,7 @@ const parsePersonCommand = (text) => {
 
   // Money given: "100 rupay Shubh ko diya"
   if (
-    /\bको\b/.test(text) &&
+    /(?:^|\s)को(?=\s|$|[?!,.])/u.test(text) &&
     /(दिया|दिए|दी|दे दिए|diya|diye|de diye|gave|paid|transfer)/i.test(
       lower
     )
@@ -249,19 +249,19 @@ const parsePersonCommand = (text) => {
 
   // Money received: "Shubh ne 100 rupaye diye"
   if (
-    /\bने\b/.test(text) &&
-    /(दिया|दिए|दी|मिले|मिला|मिली|received|mila|mili|diye|diya)/i.test(
-      lower
-    )
-  ) {
-    return {
-      type: "person_transaction",
-      personName,
-      amount,
-      transactionType: "received",
-      intent: "record_person_transaction",
-    };
-  }
+  /(?:^|\s)(?:ने|ne)(?=\s|$|[?!,.])/iu.test(text) &&
+  /(दिया|दिए|दी|मिले|मिला|मिली|received|mila|mili|diye|diya)/i.test(
+    lower
+  )
+) {
+  return {
+    type: "person_transaction",
+    personName,
+    amount,
+    transactionType: "received",
+    intent: "record_person_transaction",
+  };
+}
 
   return null;
 };
