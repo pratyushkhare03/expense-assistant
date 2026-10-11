@@ -56,17 +56,17 @@ const handlePersonCommand = async (data, spokenText) => {
     // An expense linked to a person must also count in the
     // app's existing expense totals and dashboard.
     if (transactionType === "expense") {
-  await addExpense({
-    amount: data.amount,
-    category: data.category || "other",
-    personName: data.personName,
-    description: `${spokenText} (Person: ${data.personName})`,
-    paymentMethod: "other",
-    date: getLocalDate(),
-  });
+      await addExpense({
+        amount: data.amount,
+        category: data.category || "other",
+        personName: data.personName,
+        description: `${spokenText} (Person: ${data.personName})`,
+        paymentMethod: "other",
+        date: getLocalDate(),
+      });
 
-  await onExpenseAdded?.();
-}
+      await onExpenseAdded?.();
+    }
 
     const confirmations = {
       given: `₹${data.amount} ${data.personName} को दे दिए गए हैं। हिसाब अपडेट कर दिया गया है।`,

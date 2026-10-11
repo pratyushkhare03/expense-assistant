@@ -90,51 +90,32 @@ const cleanPersonName = (name = "") =>
     .replace(/\s+/g, " ");
 
 const extractPersonName = (text) => {
+  const clean = (value = "") => value
+    .trim()
+    .replace(/^(?:(?:मैंने|मैं|हमने|हम|maine|main|mene|humne|hum)\s+)/iu, "")
+    .replace(/^\d+(?:\.\d+)?\s*(?:रुपये?|रुपए|रुपया|रुपयों|rupees?|rupaye?|rupay|rs\.?|₹)\s*/iu, "")
+    .replace(/^[,\.\s]+|[,:\s?!।]+$/gu, "")
+    .replace(/\s+/g, " ");
+
+  // Handles: "10 rupaye Shivam ko diye", "Maine Rahul ko 500 rupaye diye",
+  // "Pragati ne 50 rupaye kharch kiye", and "Shivam par kitna kharch hua?"
   const patterns = [
-    // "100 rupay xyz ko diya"
-    /(?:रुपये?|रुपए|रुपया|rupees?|rupay|rs\.?)\s+(.+?)\s+को(?=\s|$)/i,
-
-    // "50 rupay xyz ne kharch kiye"
-    /(?:रुपये?|रुपए|रुपया|rupees?|rupay|rs\.?)\s+(.+?)\s+ने(?=\s|$)/i,
-
-    // "Rahul ko 500 rupaye udhaar diye"
-    /^(.+?)\s+को(?=\s|$)/i,
-
-    /^(.+?)\s+(?:पर|पे|par|pe)(?=\s|$)/i,
-
-    // "Amit ne 200 rupaye udhaar wapas kiye"
-    /^(.+?)\s+ने(?=\s|$)/i,
-
-    // "Shubh ko kitne paise diye?"
-    /^(.+?)\s+को\s+(?:कितने|कितना|कितनी|kitne|kitna|kitni|how much)(?=\s|$)/i,
-
-    // "Rahul ka kitna udhaar baaki hai?"
-    /^(.+?)\s+का\s+/i,
-    /^(.+?)\s+की\s+/i,
-    /^(.+?)\s+के\s+/i,
+    /^(.+?)\s+(?:को|ko)(?=\s|$|[?!,.])/iu,
+    /^(.+?)\s+(?:ने|ne)(?=\s|$|[?!,.])/iu,
+    /^(.+?)\s+(?:पर|पे|par|pe)(?=\s|$|[?!,.])/iu,
+    /^(.+?)\s+(?:से|se)(?=\s|$|[?!,.])/iu,
+    /^(.+?)\s+(?:का|की|के)(?=\s|$|[?!,.])/iu,
   ];
 
   for (const pattern of patterns) {
-    const match = text.match(pattern);
-
-    if (match?.[1]) {
-      const name = match[1]
-        .trim()
-        .replace(/^[,.\s]+|[,.\s?!]+$/g, "")
-        .replace(/\s+/g, " ");
-
-      if (
-        name &&
-        !/^(मैंने|मैं|mujhe|maine|mere|my|kitna|kitne|kitni|how much)$/i.test(name)
-      ) {
-        return name;
-      }
-    }
+    const match = text.trim().match(pattern);
+    if (!match?.[1]) continue;
+    const name = clean(match[1]);
+    if (!name || /^(?:मैंने|मैं|maine|main|mujhe|mere|my|kitna|kitne|kitni|how much)$/iu.test(name)) continue;
+    return name;
   }
-
   return null;
 };
-
 
 const parsePersonCommand = (text) => {
   const lower = text.toLowerCase().trim();
@@ -145,9 +126,11 @@ const parsePersonCommand = (text) => {
       lower
     );
 
+  // JavaScript's \b word boundary does not work reliably with Devanagari.
+  // Match Hindi postpositions by whitespace boundaries instead.
   const mentionsPerson =
-    /\bको\b|\bने\b|\bसे\b|\bका\b|\bकी\b|\bके\b/.test(text) ||
-    /\bko\b|\bne\b|\bse\b|\bka\b|\bki\b|\bke\b/i.test(text);
+    /(?:^|\s)(?:को|ने|से|का|की|के|पर|पे)(?=\s|$|[?!,.])/u.test(text) ||
+    /(?:^|\s)(?:ko|ne|se|ka|ki|ke|par|pe)(?=\s|$|[?!,.])/i.test(text);
 
   if (!mentionsPerson) {
     return null;
@@ -173,11 +156,9 @@ const parsePersonCommand = (text) => {
       )
     ) {
       metric = "received";
-    } else if (
-  /खर्च|खर्चे|खर्चा|खर्च हुए|खर्च हुआ|spent|expense/i.test(lower)
-) {
-  metric = "expense";
-}
+    } else if (/खर्च|खर्चे|खर्चा|kharch|kharcha|spent|expense/i.test(lower)) {
+      metric = "expense";
+    }
 
     return {
       type: "person_query",
@@ -224,50 +205,48 @@ const parsePersonCommand = (text) => {
 
   // Person-associated expense: "50 rupay Pragati ne kharch kiye"
   if (
-    /खर्च|खर्चे|खर्चा|spent|expense|खरीदा|खरीदी/i.test(lower)
+    /खर्च|खर्चे|खर्चा|kharch|kharcha|spent|expense|खरीदा|खरीदी|kharida|kharidi/i.test(lower)
   ) {
     return {
       type: "person_transaction",
       personName,
       amount,
       transactionType: "expense",
+      category: detectCategory(text),
       intent: "record_person_transaction",
     };
   }
 
-  // Money given: "100 rupay Shubh ko diya"
-  // "10 rupaye Shivam ko diye" = person-associated expense
-if (
-  /(?:^|\s)(?:को|ko)(?=\s|$|[?!,.])/iu.test(text) &&
-  /(दिया|दिए|दी|दे दिए|diya|diye|de diye|gave|paid|transfer)/i.test(
-    lower
-  )
-) {
-  return {
-    type: "person_transaction",
-    personName,
-    amount,
-    transactionType: "expense",
-    category: detectCategory(text),
-    intent: "record_person_transaction",
-  };
-}
+  // Treat "10 rupaye Shivam ko diye" as an expense linked to Shivam.
+  if (
+    /(?:^|\s)(?:को|ko)(?=\s|$|[?!,.])/iu.test(text) &&
+    /(दिया|दिए|दी|दे दिए|diya|diye|de diye|gave|paid|transfer)/i.test(lower)
+  ) {
+    return {
+      type: "person_transaction",
+      personName,
+      amount,
+      transactionType: "expense",
+      category: detectCategory(text),
+      intent: "record_person_transaction",
+    };
+  }
 
   // Money received: "Shubh ne 100 rupaye diye"
   if (
-  /(?:^|\s)(?:ने|ne)(?=\s|$|[?!,.])/iu.test(text) &&
-  /(दिया|दिए|दी|मिले|मिला|मिली|received|mila|mili|diye|diya)/i.test(
-    lower
-  )
-) {
-  return {
-    type: "person_transaction",
-    personName,
-    amount,
-    transactionType: "received",
-    intent: "record_person_transaction",
-  };
-}
+    /(?:^|\s)ने(?=\s|$|[?!,.])/u.test(text) &&
+    /(दिया|दिए|दी|मिले|मिला|मिली|received|mila|mili|diye|diya)/i.test(
+      lower
+    )
+  ) {
+    return {
+      type: "person_transaction",
+      personName,
+      amount,
+      transactionType: "received",
+      intent: "record_person_transaction",
+    };
+  }
 
   return null;
 };
@@ -692,8 +671,21 @@ const response = await fetch(`${API_BASE_URL}/api/parse`, {
 };
 
 export const parseWithBackend = async (text) => {
-  // Send every spoken command to Gemini first so natural Hindi/Hinglish is
-  // interpreted consistently. The local parser is a resilience fallback.
+  // Person-ledger commands are parsed locally first. This prevents Gemini from
+  // misclassifying a named-person transaction as an ordinary "other" expense.
+  const personCommand = parsePersonCommand(text);
+  if (personCommand) {
+    return {
+      success: true,
+      data: {
+        ...personCommand,
+        description: text,
+        date: null,
+      },
+    };
+  }
+
+  // All other commands go through Gemini first, with local parsing as fallback.
   const aiResult = await parseWithGemini(text);
   if (aiResult.success && aiResult.data?.type !== "unknown") return aiResult;
 
