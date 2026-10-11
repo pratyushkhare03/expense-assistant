@@ -40,10 +40,11 @@ export const formatCategory = (category) => {
   return categories[category] || category;
 };
 
-export const formatExpenseResponse = (amount, category) => {
+export const formatExpenseResponse = (amount, category, dateLabel = "") => {
   const categoryName = formatCategory(category);
+  const base = `₹${amount} का ${categoryName} से जुड़ा खर्च सेव कर दिया गया है।`;
 
-  return `₹${amount} का ${categoryName} से जुड़ा खर्च सेव कर दिया गया है।`;
+  return dateLabel ? `${base} तारीख: ${dateLabel}।` : base;
 };
 
 export const formatDateExpenseResponse = (date, amount) => {

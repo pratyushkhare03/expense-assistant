@@ -278,10 +278,7 @@ function App() {
             </div>
 
             <div className="voice-modal-body">
-              <VoiceInput
-                expenses={expenses}
-                onExpenseAdded={loadData}
-              />
+              <VoiceInput onExpenseAdded={loadData} />
             </div>
 
             <p className="voice-modal-hint">

@@ -25,12 +25,11 @@ export const getThisMonthExpense = (expenses) => {
 
   return expenses
     .filter((expense) => {
-      const expenseDate = new Date(expense.date);
+      // Compare the YYYY-MM-DD parts directly. new Date("2026-10-01") is UTC
+      // midnight and lands in the wrong month in timezones behind UTC.
+      const [year, month] = String(expense.date || "").split("-").map(Number);
 
-      return (
-        expenseDate.getFullYear() === currentYear &&
-        expenseDate.getMonth() === currentMonth
-      );
+      return year === currentYear && month === currentMonth + 1;
     })
     .reduce((total, expense) => {
       return total + Number(expense.amount);

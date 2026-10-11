@@ -42,16 +42,30 @@ app.post("/api/parse", async (req, res) => {
       return res.status(503).json({ success: false, message: "AI service is not configured." });
     }
 
+    // The model has no clock. The client sends *its* local "today" (its
+    // timezone, not the server's) so "kal", "parso" and year-less dates can be
+    // resolved correctly.
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.today || "")
+      ? req.body.today
+      : new Date().toISOString().slice(0, 10);
+
     const prompt = `You are the Hindi-first financial command parser for a personal expense tracker. Interpret ONLY this exact user utterance. It may be Hindi, Hinglish, or English. Understand natural wording and transliteration, but never invent missing amounts, names, dates, or facts. Return only JSON matching the schema.
 
+TODAY'S DATE (user's local calendar): ${today} (YYYY-MM-DD).
 USER UTTERANCE: ${JSON.stringify(text)}
+
+DATE RULES (field "date", YYYY-MM-DD, otherwise null):
+- Applies to recording AND to questions. "आज/aaj/today" = ${today}. "कल/kal/yesterday" = the day before ${today}. "परसों/parso/day before yesterday" = two days before. "3 din pehle / 3 days ago" = that many days before. Weekday names mean the most recent such weekday (never in the future).
+- Explicit dates ("5 अक्टूबर", "5 October", "पांच अक्टूबर", "15/09") use the year of ${today}; if that date would be after ${today}, use the previous year.
+- A day number next to a month name is a DATE, never an amount. "5 अक्टूबर को 200 रुपये खर्च किए" -> amount 200, date = 5 October.
+- No date in the utterance -> date = null (the app uses today). Never return a future date. For periods such as "this week" or "last month" leave date = null; the app reads the period itself.
 
 INTENT RULES:
 - Expense: user spent/paid money for goods/services (e.g. "आज 250 रुपये खाने पर खर्च किए", "I spent 100 on tea"). type=expense, intent=record_expense, positive numeric amount required, category from supported categories. petrol/diesel/CNG=fuel; auto/bus/train/taxi=travel; chai/tea/food=food.
 - Income: money the user received/earned (e.g. "मुझे 12000 रुपये सैलरी मिली", "I received 500 from freelance work"). type=income, intent=record_income, source salary/family/freelance/business/investment/other.
 - Queries: use type=query and amount=null. Supported intents: today_expense, yesterday_expense, day_before_yesterday_expense, month_expense, total_expense, category_expense, date_expense, total_income, month_income, total_balance, month_balance. For category_expense fill category. For a specific date, use YYYY-MM-DD and current year if year is omitted; if date is ambiguous, use unknown rather than guessing.
 - Person transaction: examples "100 rupay Shubh ko diya" -> type=person_transaction, transactionType=given; "Shubh ne 100 rupaye diye" -> received; "Rahul ko 500 rupaye udhaar diye" -> loan_given; "Amit ne 200 rupaye udhaar wapas kiye" -> loan_repayment; "50 rupay Pragati ne kharch kiye" -> expense. Set personName and positive amount. Loan given is NOT ordinary expense; loan repayment is NOT ordinary income.
-- Person queries: "Shubh ko kitne paise diye?" -> type=person_query, metric=given. For outstanding loans use metric=loan_outstanding; received from person use received; person-related spending use expense. Set personName and amount=null.
+- Person queries: "Shubh ko kitne paise diye?" -> type=person_query, metric=given. For outstanding loans use metric=loan_outstanding; received from person use received; person-related spending use expense. Set personName and amount=null. Questions such as "Shivam ka total kharch", "total expense of Shivam", "शिवम पर कितना खर्च हुआ" are person_query with metric=expense and the person's name in personName; they must NEVER be total_expense (that is for the user's overall spending with no person named).
 - Do not classify a question about spending as a new expense. Do not confuse "mujhe paise mile" (income) with an expense. If required information for recording a transaction is absent or the utterance is not understood, use type=unknown.
 - Always preserve the actual amount as spoken. Hindi number words must be interpreted carefully. No amount -> null.
 - Descriptions should be concise and based only on the user's words. Keep category and source in their exact allowed enum.
@@ -79,6 +93,11 @@ INTENT RULES:
       data.type = "unknown";
       data.intent = "unknown";
       data.amount = null;
+    }
+    // Reject malformed or future dates from the model; the app then uses its own parser/today.
+    if (data.date !== null && data.date !== undefined) {
+      const valid = /^\d{4}-\d{2}-\d{2}$/.test(data.date) && !Number.isNaN(Date.parse(data.date)) && data.date <= today;
+      if (!valid) data.date = null;
     }
     if (data.type === "income" && !["salary", "family", "freelance", "business", "investment", "other"].includes(data.source)) data.source = "other";
     if (data.type === "expense" && !["food", "travel", "fuel", "grocery", "shopping", "bills", "health", "other"].includes(data.category)) data.category = "other";

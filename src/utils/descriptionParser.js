@@ -1,5 +1,8 @@
+import { stripDateFromText } from "./dateParser";
+
 export const extractDescription = (text, category) => {
-  let description = text.trim();
+  // "5 अक्टूबर को चाय पर 20 रुपये" -> the date is stored in `date`, not text.
+  let description = stripDateFromText(text).trim();
 
   // Remove common expense phrases
   description = description

@@ -1,5 +1,12 @@
 
 import { db } from "./database";
+import { getLocalDate } from "../utils/dateUtils";
+import {
+  findMatchingPeople,
+  personNameKey,
+  summarizePerson,
+  summarizePersonExpenses,
+} from "../utils/personUtils";
 
 const normalizeName = (name) =>
   name.trim().replace(/\s+/g, " ").toLowerCase();
@@ -24,6 +31,15 @@ export const getOrCreatePerson = async (name) => {
 
     if (existing) {
       return existing;
+    }
+
+    // "शिवम", "Shivam" and "Shiwam" are one person, not three. Re-use the
+    // existing record instead of splitting the person's expenses across
+    // several spellings. (A bare first name never merges into a full name
+    // here; that is only done when *querying*.)
+    const similar = findMatchingPeople(await db.people.toArray(), cleanName);
+    if (similar.people.length && similar.matchType !== "first-name") {
+      return similar.people[0];
     }
 
     const id = await db.people.add({
@@ -51,7 +67,8 @@ export const addPersonTransaction = async ({
   amount,
   type,
   description = "",
-  date = new Date().toISOString().slice(0, 10),
+  date,
+  expenseId = null,
 }) => {
   const validTypes = [
     "given",
@@ -88,7 +105,9 @@ export const addPersonTransaction = async ({
         type,
         amount: numericAmount,
         description,
-        date,
+        // Local calendar date (toISOString() is UTC and can be a day off).
+        date: date || getLocalDate(),
+        expenseId,
         createdAt: new Date(),
       });
     }
@@ -121,59 +140,14 @@ export const getPersonTransactions = async (personId) => {
 };
 
 /**
- * Summarize a person's money history.
+ * Summarize a person's money history (optionally inside a date range).
  *
- * "given" and "received" are general transfers.
- * Loan balance is calculated separately.
+ * "given" and "received" are general transfers; loan balance is calculated
+ * separately; "totalExpenses" is the single definition of person spending.
  */
-export const getPersonSummary = async (personId) => {
+export const getPersonSummary = async (personId, range = {}) => {
   const transactions = await getPersonTransactions(personId);
-
-  const summary = {
-    totalGiven: 0,
-    totalReceived: 0,
-    totalLoansGiven: 0,
-    totalLoanRepayments: 0,
-    totalExpenses: 0,
-    loanOutstanding: 0,
-    transactionCount: transactions.length,
-  };
-
-  for (const transaction of transactions) {
-    const amount = Number(transaction.amount) || 0;
-
-    switch (transaction.type) {
-      case "given":
-        summary.totalGiven += amount;
-        // Older versions stored "Shivam ko paise diye" as `given`.
-        // Count those historical transfers as person-associated expenses too.
-        summary.totalExpenses += amount;
-        break;
-
-      case "received":
-        summary.totalReceived += amount;
-        break;
-
-      case "loan_given":
-        summary.totalLoansGiven += amount;
-        break;
-
-      case "loan_repayment":
-        summary.totalLoanRepayments += amount;
-        break;
-
-      case "expense":
-        summary.totalExpenses += amount;
-        break;
-    }
-  }
-
-  summary.loanOutstanding = Math.max(
-    0,
-    summary.totalLoansGiven - summary.totalLoanRepayments
-  );
-
-  return summary;
+  return summarizePerson(transactions, range);
 };
 
 /**
@@ -182,3 +156,108 @@ export const getPersonSummary = async (personId) => {
 export const deletePersonTransaction = async (transactionId) => {
   return db.personTransactions.delete(transactionId);
 };
+
+
+/**
+ * Records spending on/with a person: the expense (so Home, Dashboard and
+ * Expense History include it) AND the person-ledger entry, atomically and
+ * linked by `expenseId`. Either both are saved or neither is.
+ */
+export const addPersonExpense = async ({
+  personName,
+  amount,
+  category = "other",
+  description = "",
+  date,
+  paymentMethod = "other",
+}) => {
+  const numericAmount = Number(amount);
+
+  if (!personName?.trim()) throw new Error("Person name is required.");
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    throw new Error("Enter a valid amount greater than zero.");
+  }
+
+  const when = date || getLocalDate();
+
+  return db.transaction(
+    "rw",
+    db.expenses,
+    db.people,
+    db.personTransactions,
+    async () => {
+      const person = await getOrCreatePerson(personName);
+
+      const expenseId = await db.expenses.add({
+        amount: numericAmount,
+        category,
+        description,
+        paymentMethod,
+        date: when,
+        personId: person.id,
+        personName: person.name,
+        createdAt: new Date(),
+      });
+
+      const transactionId = await db.personTransactions.add({
+        personId: person.id,
+        personName: person.name,
+        type: "expense",
+        amount: numericAmount,
+        description,
+        date: when,
+        expenseId,
+        createdAt: new Date(),
+      });
+
+      return { person, expenseId, transactionId };
+    }
+  );
+};
+
+/**
+ * Everything about a person, looked up by *spoken name*, optionally inside a
+ * date range.
+ *
+ * Every person record the name resolves to is combined, so all spellings
+ * ("शिवम" / "Shivam") and every individual entry end up in one total, which
+ * is exactly "total expense for <person> = sum of all their expenses".
+ *
+ * Returns { found, people, matchType, summary }.
+ */
+export const getPersonReport = async (personName, range = {}) => {
+  const { people, matchType } = findMatchingPeople(
+    await getAllPeople(),
+    personName
+  );
+
+  if (!people.length) {
+    return { found: false, people: [], matchType: null, summary: summarizePerson([]) };
+  }
+
+  const transactions = [];
+  for (const person of people) {
+    transactions.push(...(await getPersonTransactions(person.id)));
+  }
+
+  return {
+    found: true,
+    people,
+    matchType,
+    summary: summarizePerson(transactions, range),
+  };
+};
+
+/** Convenience wrapper: { found, total, count, people, matchType }. */
+export const getPersonExpenseReport = async (personName, range = {}) => {
+  const report = await getPersonReport(personName, range);
+  return {
+    found: report.found,
+    people: report.people,
+    matchType: report.matchType,
+    total: report.summary.totalExpenses,
+    count: report.summary.expenseCount,
+  };
+};
+
+export { personNameKey };

@@ -113,11 +113,19 @@ const tens = {
   "करोड़": 10000000,
 };
 
+/** True for a single Hindi number word ("पचास", "सौ", "ढाई" ...). */
+export const isHindiNumberWord = (word = "") =>
+  units[word] !== undefined ||
+  tens[word] !== undefined ||
+  ["ढाई", "डेढ़", "डेढ", "साढ़े", "साढे"].includes(word);
+
 export const parseHindiNumber = (text) => {
   if (!text) return null;
 
   const normalized = text
     .toLowerCase()
+    // "1,250" / "1,25,000" must read as one number, not as 1
+    .replace(/(\d),(?=\d)/g, "$1")
     .replace(/रुपये|रुपए|रुपया|rs\.?|inr|₹/gi, "")
     .trim();
 
