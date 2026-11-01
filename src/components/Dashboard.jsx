@@ -76,21 +76,21 @@ function Dashboard({ expenses = [], incomes = [] }) {
         <div className="dashboard-balance-content">
           <span className="dashboard-card-label">
             <span className="dashboard-balance-icon">◈</span>
-            Overall Balance
+            Current Month Balance
           </span>
 
           <h3
             className={
-              overallBalance < 0
+              monthBalance < 0
                 ? "dashboard-balance-value negative"
                 : "dashboard-balance-value"
             }
           >
-            {formatMoney(overallBalance)}
+            {formatMoney(monthBalance)}
           </h3>
 
           <p>
-            {overallBalance >= 0
+            {monthBalance >= 0
               ? "Your recorded income minus your recorded expenses."
               : "Your recorded expenses exceed your recorded income."}
           </p>
@@ -106,14 +106,14 @@ function Dashboard({ expenses = [], incomes = [] }) {
         <div className="dashboard-balance-footer">
           <span>
             <span className="dashboard-footer-dot income-dot" />
-            Total income
-            <strong>{formatMoney(totalIncome)}</strong>
+            This month's income
+            <strong>{formatMoney(monthIncome)}</strong>
           </span>
 
           <span>
             <span className="dashboard-footer-dot expense-dot" />
-            Total expenses
-            <strong>{formatMoney(totalExpense)}</strong>
+            This month's expenses
+            <strong>{formatMoney(monthExpense)}</strong>
           </span>
         </div>
       </div>
