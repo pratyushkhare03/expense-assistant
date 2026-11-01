@@ -3757,3 +3757,237 @@ svg {
   .home-quick-prompts span { max-width: 100%; font-size: 0.7rem; }
   .topbar-mic-shortcut { min-width: 42px; min-height: 42px; padding: 0 11px; border-radius: 13px; }
 }
+
+
+
+/* ===== Month-wise Expense History dropdowns only ===== */
+.expense-month-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.expense-month-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.expense-month-group:has(.expense-month-toggle[aria-expanded="true"]) {
+  border-color: rgba(251, 146, 60, 0.38);
+  background: rgba(251, 146, 60, 0.035);
+}
+
+.expense-month-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 70px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: inherit;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 180ms ease;
+}
+
+.expense-month-toggle:hover {
+  background: rgba(251, 146, 60, 0.055);
+}
+
+.expense-month-toggle:focus-visible {
+  outline: 2px solid #fb923c;
+  outline-offset: -3px;
+}
+
+.expense-month-toggle-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.expense-month-chevron {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(251, 146, 60, 0.24);
+  border-radius: 10px;
+  color: #fdba74;
+  background: rgba(251, 146, 60, 0.09);
+  font-size: 1rem;
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.expense-month-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text);
+}
+
+.expense-month-name strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expense-month-name small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.expense-month-total {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  color: #fdba74;
+  font-size: 0.9rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.expense-month-total small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.expense-month-group .expense-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.expense-month-group .expense-month-empty {
+  margin: 0 12px 12px;
+  padding: 16px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .expense-month-groups {
+    gap: 9px;
+  }
+
+  .expense-month-toggle {
+    min-height: 64px;
+    gap: 9px;
+    padding: 11px 12px;
+  }
+
+  .expense-month-toggle-main {
+    gap: 9px;
+  }
+
+  .expense-month-chevron {
+    flex-basis: 27px;
+    width: 27px;
+    height: 27px;
+  }
+
+  .expense-month-name strong {
+    font-size: 0.84rem;
+  }
+
+  .expense-month-name small {
+    font-size: 0.68rem;
+  }
+
+  .expense-month-total {
+    font-size: 0.82rem;
+  }
+
+  .expense-month-group .expense-history-list {
+    padding: 0 8px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expense-month-group,
+  .expense-month-toggle,
+  .expense-month-chevron {
+    transition: none;
+  }
+}
+
+
+/* Month dropdown arrow: keep one consistent chevron in both states */
+.expense-month-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid rgba(251, 146, 60, 0.24);
+  border-radius: 10px;
+  color: #fdba74;
+  background: rgba(251, 146, 60, 0.09);
+  font-size: 0; /* hide the changing JSX glyph */
+  line-height: 1;
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.expense-month-chevron::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateX(-2px) rotate(-45deg);
+}
+
+/* Closed = points down; open = points up. Only the direction changes. */
+.expense-month-toggle.is-expanded .expense-month-chevron {
+  transform: rotate(90deg);
+  border-color: rgba(251, 146, 60, 0.38);
+  background: rgba(251, 146, 60, 0.15);
+}
+
+@media (max-width: 480px) {
+  .expense-month-chevron {
+    flex-basis: 27px;
+    width: 27px;
+    height: 27px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expense-month-chevron {
+    transition: none;
+  }
+}
